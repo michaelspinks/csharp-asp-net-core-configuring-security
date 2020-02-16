@@ -8,19 +8,21 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System;
 
 namespace ConferenceTracker
 {
-    public class Startup
+    public class startup
     {
-        public Startup(IConfiguration configuration)
+        public startup(IConfiguration configuration)
         {
             Configuration = configuration;
         }
 
         public IConfiguration Configuration { get; }
         public string SecretMessage { get; set; }
+        public readonly string _allowedOrigins = "_allowedOrigins";
 
 
         // This method gets called by the runtime. Use this method to add services to the container.
@@ -29,6 +31,9 @@ namespace ConferenceTracker
             services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase("ConferenceTracker"));
             services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
                 .AddEntityFrameworkStores<ApplicationDbContext>();
+            services.AddCors(options => { options.AddPolicy(_allowedOrigins, builder => { builder.WithOrigins("http://pluralsight.com"); }); });
+            SecretMessage = Configuration["SecretMessage"];
+            services.Configure<CookiePolicyOptions>(options => { options.CheckConsentNeeded = context => true; options.MinimumSameSitePolicy = SameSiteMode.None; });
             services.AddControllersWithViews();
             services.AddRazorPages();
             services.AddTransient<IPresentationRepository, PresentationRepository>();
@@ -37,14 +42,32 @@ namespace ConferenceTracker
 
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
-        {            
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILogger<startup> logger  )
+        {
+            if (env.IsDevelopment())
+            {
+                logger.LogInformation("Environment is in Development");
+                app.UseDeveloperExceptionPage();
+                app.UseDatabaseErrorPage();
+            }
+            else
+            {
+                app.UseExceptionHandler("/Home/Error");
+                app.UseHsts();
+
+            }
+
             using (var scope = app.ApplicationServices.GetRequiredService<IServiceScopeFactory>().CreateScope())
             using (var context = scope.ServiceProvider.GetService<ApplicationDbContext>())
                 context.Database.EnsureCreated();
 
+            app.UseCors("_allowedOrigins");
+
+            app.UseHttpsRedirection();
+
             app.UseStaticFiles();
 
+            app.UseCookiePolicy();
             app.UseRouting();
 
             app.UseAuthentication();
